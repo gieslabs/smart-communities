@@ -1,0 +1,180 @@
+---
+title: "Community Data Science"
+author: "Mobility Project Team"
+date: "April 16, 2019"
+output:
+  html_notebook: default
+  html_document: default
+subtitle: Gies College of Business
+---
+
+-------------
+
+## Notebook Instructions
+
+-------------
+
+**Objective**
+* Work with data from local companies to help improve transportation services provided to the local community 
+
+**Scope**
+* Bus Delays-MTD Ridership/Schedule data
+* Optimal Allocation-Buses/Bikes
+* Capacity Planning and Safety - F&S
+
+**Community Impact**
+* Safer, Efficient, coordinated
+
+**Student Impact**
+* Data Curation, Analysis, Story Telling
+
+**Data**
+* MTD - Ridership, Schedule,boarding-lighting
+* F&S - Building types, Bike capacity/Census, Pavement condition index,  
+* Veoride- Ride start/stop/duration/gps
+* Tech Services- Wireless activity data in buildings
+* Open- Building-Class-schedule-grades
+
+### Collaborators
+* Varshini Ramanathan
+* Jose Luis Rodriguez
+* Vishal Sachdev
+* Jinran Shi
+* Jasneet Thukral
+* Yanbing Yi
+
+### Load Packages in R/RStudio 
+
+We are going to use tidyverse a collection of R packages designed for data science. 
+
+* Info: https://www.tidyverse.org/
+
+```{r, echo = TRUE, message=FALSE, warning=FALSE}
+
+# Here we are checking if the package is installed
+if(!require("tidyverse")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("tidyverse", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("tidyverse")
+}
+
+# Here we are checking if the package is installed
+if(!require("rvest")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("rvest", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("rvest")
+}
+
+# Here we are checking if the package is installed
+if(!require("lubridate")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("lubridate", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("lubridate")
+}
+
+```
+
+
+-------------
+
+## Data Collection - Web Scraping
+
+-------------
+
+We scrapped the data from the University of Illinois Urbana-Champaign course explorer website. The script on how we scrapped the website is on the github part of this project. The web scrapping was based on the uiuc-gpa dataset.
+
+* https://courses.illinois.edu/schedule
+
+```{r, echo = TRUE, message=FALSE}
+
+gpa <- read_csv("data/uiuc-gpa.csv")
+
+head(gpa)
+
+```
+
+
+```{r, echo = TRUE}
+
+colnames(gpa) <- colnames(gpa) %>% 
+  tolower() %>% 
+  str_replace_all(" ", "_")
+
+```
+
+
+
+```{r, echo = TRUE, message=FALSE}
+
+courses <- read_csv("data/uiuc-courses.csv")
+
+head(courses)
+
+```
+
+-------------
+
+## Data Preparation - Curation and Merge
+
+-------------
+
+Lets explore the two datasets further to find to see if we can find other important variables.
+
+* **uiuc-gpa** and **uiuc-courses**
+
+Calculate the number of students graded per course from gpa dataset
+```{r, echo = TRUE}
+
+gpa$course_attendance <- gpa[7:20] %>% 
+  mutate(attendance = rowSums(.)) %>% 
+  .$attendance
+
+gpa$course_title <- gpa$course_title %>% 
+  tolower() %>% 
+  str_replace_all(" ", "_")
+
+head(gpa)
+
+```
+
+Explore ways to merge the two datasets or find metrics useful to add to the main dataset
+
+```{r, echo = TRUE}
+
+gpa_filter <- gpa %>% 
+  filter(term=="Fall", year==2010, course_title=="intro_asian_american_studies") 
+attendance_total <- gpa_filter %>% 
+  summarise(attendance_total = sum(course_attendance)) %>% as.numeric()
+
+gpa_filter$mean_attendance <- mean(gpa_filter$course_attendance)
+
+gpa_filter$attendance_total <- attendance_total
+
+gpa_filter <- gpa_filter[c("subject", "number", "year", "term",
+  "mean_attendance", "course_attendance","attendance_total", 
+  "course_title", "primary_instructor")]
+
+gpa_filter
+
+```
+
+Create a main dataset with *attendance_total* and *mean_attendance* for each subject/course title
+
+```{r, echo=TRUE}
+
+#TODO *attendance_total* and *mean_attendance*
+
+courses <- read_csv("data/uiuc-courses.csv")
+head(courses)
+tail(courses)
+```
+

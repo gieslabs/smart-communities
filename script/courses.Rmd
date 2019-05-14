@@ -1,0 +1,309 @@
+---
+title: "UIUC Course Explorer Web Scraping"
+author: "Jose Luis Rodriguez"
+date: "April 16, 2019"
+output:
+  html_document: default
+  html_notebook: default
+subtitle: Market Information Lab
+---
+
+-------------
+
+## Notebook Instructions
+
+-------------
+
+
+### Load Packages in R/RStudio 
+
+We are going to use tidyverse a collection of R packages designed for data science. 
+
+* Info: https://www.tidyverse.org/
+
+```{r, echo = FALSE}
+
+# Here we are checking if the package is installed
+if(!require("tidyverse")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("tidyverse", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("tidyverse")
+}
+
+# Here we are checking if the package is installed
+if(!require("rvest")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("rvest", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("rvest")
+}
+
+
+# Here we are checking if the package is installed
+if(!require("webdriver")){
+  # If the package is not in the system then it will be install
+  source("https://install-github.me/rstudio/webdriver")  
+  # Here we are loading the package
+  library("webdriver")
+  install_phantomjs()
+}
+
+# Here we are checking if the package is installed
+if(!require("lubridate")){
+  
+  # If the package is not in the system then it will be install
+  install.packages("lubridate", dependencies = TRUE)
+  
+  # Here we are loading the package
+  library("lubridate")
+}
+
+```
+
+
+#### Web Scraping Functions
+
+```{r}
+# This function to creates a URL for the www.dice.com website and extract the data 
+
+create_url <- function(website, year, term, class, section){
+  url <- paste0(website, "/", year, "/", term,"/",class, "/", section)
+  return(tibble(url,year,term,class,section))
+}
+
+parse_time <- function(df){
+  time_start <- c()
+  time_end <- c()
+  for(it in df$time){
+    if(nchar(it)<25){
+      tstart <- it %>%
+        str_split(" - ") %>% 
+        unlist() %>% 
+        strptime("%I:%M %p") %>% 
+        format("%H:%M:%S") %>% 
+        .[c(TRUE,FALSE)]
+    }else{
+      
+    }
+  }
+  if(nchar(df$time[1])<25){
+    time_start <- df$time %>%
+      str_split(" - ") %>% 
+      unlist() %>% 
+      strptime("%I:%M %p") %>% 
+      format("%H:%M:%S") %>% 
+      .[c(TRUE,FALSE)]
+    time_end <- df$time %>%
+      str_split(" - ") %>% 
+      unlist() %>% 
+      strptime("%I:%M %p") %>% 
+      format("%H:%M:%S") %>% 
+      .[c(FALSE,TRUE)]
+    df$time_start <- time_start
+    df$time_end <- time_end
+  }else{
+    time_start <- df$time[2] %>% 
+      str_replace("PM\\d","PM ") %>% 
+      str_replace("AM\\d","AM ") %>% 
+      str_replace_all(" - ", "-") %>% 
+      str_split(" ") %>% unlist() %>% 
+      str_split("-") %>% unlist() %>% 
+      strptime("%I:%M %p") %>% 
+      format("%H:%M:%S") %>% 
+      .[c(TRUE,FALSE)]
+    time_end <- df$time %>% 
+      str_replace("PM\\d","PM ") %>% 
+      str_replace("AM\\d","AM ") %>% 
+      str_replace_all(" - ", "-") %>% 
+      str_split(" ") %>% unlist() %>% 
+      str_split("-") %>% unlist() %>% 
+      strptime("%I:%M %p") %>% 
+      format("%H:%M:%S") %>% 
+      .[c(FALSE,TRUE)]
+  
+    df <- rbind(df,df)
+    df$time_start <- time_start
+    df$time_end <- time_end
+  }
+return(df)
+}
+
+# This function use the unstructure data from the html file to create a dataframe
+# with only the data that is needed for analysis
+
+create_tibble <- function(url, session, year, term, class, section){
+  session$go(url)
+  session$getUrl()
+  session$findElement("#collapseAllTR")$click()
+  title <- session$findElement(".app-label")$getText() %>% 
+    str_replace_all(" ","_") %>% 
+    tolower()
+  
+  info <- session$findElement("#app-course-info")$findElements("p")[[2]]$getText()
+  
+  tb_html <- session$findElement(css = ".dataTable")$getAttribute("outerHTML") %>%
+    str_replace_all("<span class=\"hide\">[0-9]{4}</span>","")
+  
+  df <- read_html(tb_html) %>% 
+    html_table(fill = TRUE) %>% .[[1]] 
+  
+  colnames(df) <- tolower(colnames(df))
+  df <- as_tibble(df[c("crn","type","section","time","day","location","instructor")])
+  df <- df[!df$type=="Online",]
+  
+  if(length(df$type)==0){
+    return(tibble())
+  }else{
+    df <- parse_time(df)
+    df$year <- year
+    df$term <- term %>% 
+      str_replace_all(" ", "_") %>% 
+      tolower()
+    df$course_tile <- title
+    df$course_type <- df$type %>% tolower()
+    df$course_section <- as.character(df$section)
+    df$day <- as.character(df$day)
+    df$course <- paste0(class,"_",section)
+    df$course_info <- info
+    df$course_schedule <- url
+    col_names <- c("crn","course","day","time_start","time_end",
+                   "location","instructor","course_tile",
+                   "course_type","course_section", "course_info",
+                   "course_schedule")
+    return(df[col_names])
+  }
+}
+
+df$time[2] %>% 
+  str_remove_all(" - ") %>% 
+  str_split("AM") %>% unlist()
+  
+df$time[1] %>% 
+  str_remove_all(" - ") %>% 
+  str_split("AM") %>% unlist() %>% 
+  str_split("PM") %>% unlist()
+
+
+```
+
+
+-------------
+
+## Task 1: Data Collection - Web Scraping
+
+-------------
+
+```{r}
+
+website = "https://courses.illinois.edu/schedule"
+year = "2010"
+term = "summer"
+class = "ACCY"
+section = "301"
+
+course_url <- create_url(website = "https://courses.illinois.edu/schedule",
+                         year = "2010", 
+                         term = "summer", 
+                         class = "ACCY", 
+                         section = "301")
+
+url <- course_url$url
+
+df <- create_tibble(url = course_url$url,
+                    session = session,
+                    year = course_url$year,
+                    term = course_url$term,
+                    class = course_url$class,
+                    section = course_url$section)
+
+
+```
+
+
+### Test the function to create a url
+
+* Commands: create_url()
+
+```{r}
+data <- read_csv("uiuc-gpa.csv")
+
+website = "https://courses.illinois.edu/schedule"
+
+colnames(data) <- colnames(data) %>% 
+  str_replace_all(" ", "_") %>% 
+  tolower()
+
+df_group <- data %>% 
+  group_by(year, term, subject) %>% 
+  distinct(number)
+
+for (row in 1:nrow(df_group)) {
+  if(row==1){
+    courses <- create_url(website = website, 
+                          year = df_group[row,]$year, 
+                          term = df_group[row,]$term,
+                          class = df_group[row,]$subject, 
+                          section = df_group[row,]$number)
+  }else{
+    df <- create_url(website = website,
+                     year = df_group[row,]$year,
+                     term = df_group[row,]$term,
+                     class = df_group[row,]$subject,
+                     section = df_group[row,]$number)
+    courses <- bind_rows(courses, df)
+  }
+}
+
+#write_csv(courses,"~/Desktop/mobility/courses.csv")
+
+#head(courses)
+url <- courses[row,]$url
+df
+```
+
+
+```{r}
+
+courses <- read_csv("data/courses.csv")
+pjs <- run_phantomjs()
+session <- Session$new(port = pjs$port)
+
+for (row in 1:nrow(courses)) {
+  # COMMENT: If statement to create the first dataframe
+  if(row == 1) {
+    # COMMENT: Creates a tibble dataframe extracting information from the html code
+    course_data <- create_tibble(url = courses[row,]$url,
+                                 session = session,
+                                 year = courses[row,]$year,
+                                 term = courses[row,]$term,
+                                 class = courses[row,]$class,
+                                 section = courses[row,]$section)
+  }else{
+      # COMMENT: We add new observation to the first dataframe
+    df <- create_tibble(url = courses[row,]$url,
+                        session = session,
+                        year = courses[row,]$year,
+                        term = courses[row,]$term,
+                        class = courses[row,]$class,
+                        section = courses[row,]$section)
+    course_data <- bind_rows(course_data, df)
+  }
+  # COMMENT: We have to wait a couple of seconds before moving to the next page
+  Sys.sleep(0.05)
+}
+
+#write_csv(course_data,"data/uiuc-courses.csv")
+
+```
+
+### Explore the dataset 
+
+```{r}
+head(course_data)
+```
+
